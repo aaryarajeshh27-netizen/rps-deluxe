@@ -65,7 +65,7 @@ function pickMsg(t) { const a = MSGS[t] || MSGS.draw; return a[Math.floor(Math.r
 // ⚠️ CHANGE THIS to your deployed server URL (wss:// for production)
 const WS_URL = typeof window !== "undefined" && window.location.hostname === "localhost"
   ? "ws://localhost:3001"
-  : "wss://rps-deluxe-production-2e2e.up.railway.app";
+  : "https://rps-deluxe.onrender.com";
 
 /* ═══════════════════════ HUGE CSS ═══════════════════════ */
 const CSS = `
