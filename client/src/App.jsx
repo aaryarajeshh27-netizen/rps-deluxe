@@ -30,12 +30,12 @@ const WINS_NEEDED = 5;
 function resolve(a, b) {
   if (a === b) return "draw";
   const w = {
-    rock: ["scissors", "kindergartner"],
-    paper: paper: ["rock", "hammer"],
-    scissors: ["paper", "net"],
-    kindergartner: ["paper", "scissors", "hammer"],
-    net: ["paper", "rock", "kindergartner"],
-    hammer: ["rock", "scissors", "net"],
+    rock: ["scissors", "kindergartner", "politician"],
+    paper: ["rock", "hammer", "politician"],
+    scissors: ["paper", "net", "politician"],
+    kindergartner: ["paper", "scissors", "hammer", "politician"],
+    net: ["paper", "rock", "kindergartner", "politician"],
+    hammer: ["rock", "scissors", "net", "politician"],
     nuke: ["rock", "paper", "scissors", "kindergartner", "net", "hammer"],
     politician: ["nuke"],
   };
