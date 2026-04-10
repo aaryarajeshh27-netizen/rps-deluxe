@@ -14,16 +14,29 @@ const UNLIMITED = Object.entries(MOVES).filter(([, v]) => !v.limited);
 const LIMITED = Object.entries(MOVES).filter(([, v]) => v.limited);
 const WINS_NEEDED = 5;
 
+/*
+  Rock beats: Scissors
+  Paper beats: Rock
+  Scissors beats: Paper
+  Kid beats: Paper, Scissors, Hammer
+  Net beats: Paper, Rock, Kid
+  Hammer beats: Rock, Scissors, Net
+  Nuke beats: Rock, Paper, Scissors, Kid, Net, Hammer (everything except Politician)
+  Politician beats: Nuke only (loses to everything else)
+  Triangle: Kid > Hammer > Net > Kid
+  Nuke vs Nuke = no points, next round double
+  Politician beats Nuke = 2 points
+*/
 function resolve(a, b) {
   if (a === b) return "draw";
   const w = {
-    rock: ["scissors", "kindergartner", "politician"],
-    paper: ["rock", "hammer", "politician"],
-    scissors: ["paper", "net", "politician"],
-    kindergartner: ["paper", "scissors", "hammer", "nuke", "politician"],
-    net: ["rock", "paper", "kindergartner", "nuke", "politician"],
-    hammer: ["rock", "scissors", "net", "nuke", "politician"],
-    nuke: ["rock", "paper", "scissors", "kindergartner", "net"],
+    rock: ["scissors"],
+    paper: ["rock"],
+    scissors: ["paper"],
+    kindergartner: ["paper", "scissors", "hammer"],
+    net: ["paper", "rock", "kindergartner"],
+    hammer: ["rock", "scissors", "net"],
+    nuke: ["rock", "paper", "scissors", "kindergartner", "net", "hammer"],
     politician: ["nuke"],
   };
   if (w[a]?.includes(b)) return "a";
@@ -43,47 +56,14 @@ function easyAI(used) {
 function hardAI(used, oppUsed, rnd) {
   const a = Object.keys(MOVES).filter((m) => !MOVES[m].limited || !used.includes(m));
   const w = {}; a.forEach((m) => (w[m] = 1));
-
-  // Politician strategy: ONLY worth playing if opponent still has nuke
-  if (!oppUsed.includes("nuke")) {
-    // Opponent still has nuke — politician could counter it
-    if (w.politician !== undefined) w.politician += 1.5;
-  } else {
-    // Opponent already used nuke — politician is USELESS, never play it
-    if (w.politician !== undefined) w.politician = 0.01;
-  }
-
-  // Hammer counters nuke — if opponent still has nuke, boost hammer
-  if (!oppUsed.includes("nuke")) {
-    if (w.hammer !== undefined) w.hammer += 3;
-  }
-
-  // Favor powerful limited moves in early-mid game
-  if (rnd < 5) {
-    if (w.kindergartner !== undefined) w.kindergartner += 2.5;
-    if (w.net !== undefined) w.net += 2.5;
-    if (w.hammer !== undefined) w.hammer += 2;
-    if (w.nuke !== undefined && rnd >= 2) w.nuke += 2;
-  }
-
-  // Save nuke for later rounds when it's more impactful
-  if (rnd < 2 && w.nuke !== undefined) w.nuke *= 0.2;
-
-  // Basic RPS weighting
-  if (w.paper !== undefined) w.paper += 0.8;
-  if (w.rock !== undefined) w.rock += 0.8;
-  if (w.scissors !== undefined) w.scissors += 0.8;
-
-  // Late game: favor unlimited moves if winning
-  if (rnd >= 6) {
-    ["rock", "paper", "scissors"].forEach((m) => { if (w[m] !== undefined) w[m] += 1.5; });
-  }
-
-  // Counter opponent's remaining specials
-  if (!oppUsed.includes("kindergartner") && w.rock !== undefined) w.rock += 1.5;
-  if (!oppUsed.includes("net") && w.scissors !== undefined) w.scissors += 1.5;
-  if (!oppUsed.includes("hammer") && w.paper !== undefined) w.paper += 1.5;
-
+  if (!oppUsed.includes("nuke")) { if (w.politician !== undefined) w.politician += 3; }
+  else { if (w.politician !== undefined) w.politician = 0.01; }
+  if (w.nuke !== undefined) { if (rnd < 2) w.nuke *= 0.2; else if (rnd < 5) w.nuke += 3; else w.nuke += 1.5; }
+  if (rnd < 5) { if (w.kindergartner !== undefined) w.kindergartner += 2; if (w.net !== undefined) w.net += 2; if (w.hammer !== undefined) w.hammer += 2; }
+  if (!oppUsed.includes("kindergartner") && w.rock !== undefined) w.rock += 1;
+  if (!oppUsed.includes("net") && w.scissors !== undefined) w.scissors += 1;
+  if (!oppUsed.includes("hammer") && w.paper !== undefined) w.paper += 1;
+  if (w.rock !== undefined) w.rock += 0.8; if (w.paper !== undefined) w.paper += 0.8; if (w.scissors !== undefined) w.scissors += 0.8;
   const t = Object.values(w).reduce((s, v) => s + v, 0);
   let r = Math.random() * t;
   for (const [m, v] of Object.entries(w)) { r -= v; if (r <= 0) return m; }
@@ -102,36 +82,22 @@ const WS_URL = typeof window !== "undefined" && window.location.hostname === "lo
   ? "ws://localhost:3001"
   : "wss://rps-deluxe-production-2e2e.up.railway.app";
 
-/* ═══ LEADERBOARD STORAGE ═══ */
-async function loadLeaderboard() {
-  try {
-    const res = await window.storage.get("leaderboard-data");
-    return res ? JSON.parse(res.value) : {};
-  } catch { return {}; }
-}
-async function saveLeaderboard(data) {
-  try { await window.storage.set("leaderboard-data", JSON.stringify(data)); } catch {}
-}
-async function recordWin(name) {
-  if (!name || !name.trim()) return;
-  const key = name.trim().toLowerCase();
-  const lb = await loadLeaderboard();
-  if (!lb[key]) lb[key] = { name: name.trim(), wins: 0, losses: 0, games: 0 };
-  lb[key].wins++;
-  lb[key].games++;
-  lb[key].name = name.trim(); // keep latest casing
-  await saveLeaderboard(lb);
-}
-async function recordLoss(name) {
-  if (!name || !name.trim()) return;
-  const key = name.trim().toLowerCase();
-  const lb = await loadLeaderboard();
-  if (!lb[key]) lb[key] = { name: name.trim(), wins: 0, losses: 0, games: 0 };
-  lb[key].losses++;
-  lb[key].games++;
-  lb[key].name = name.trim();
-  await saveLeaderboard(lb);
-}
+const FAKE_PLAYERS = [
+  { name: "fatcop123 👑", wins: 43 },
+  { name: "cheesyyy", wins: 31 },
+  { name: "swagglerz", wins: 29 },
+  { name: "bishop 👀", wins: 28 },
+  { name: "immortal_beast", wins: 22 },
+  { name: "chungusbungus", wins: 19 },
+  { name: "RKSloadeddd", wins: 17 },
+  { name: "slimetime", wins: 13 },
+  { name: "bars192", wins: 9 },
+  { name: "67child", wins: 7 },
+  { name: "thegoat23", wins: 5 },
+  { name: "WVNV__", wins: 3 },
+  { name: "sultheman", wins: 2 },
+  { name: "bedanter", wins: 1 },
+];
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=Space+Mono:wght@700&display=swap');
@@ -154,11 +120,26 @@ body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif}
 @keyframes shimmer{0%{background-position:-200% center}100%{background-position:200% center}}
 @keyframes timerPulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0)}50%{box-shadow:0 0 0 8px rgba(239,68,68,0.2)}}
 @keyframes spin{to{transform:rotate(360deg)}}
+@keyframes glowPulse{0%,100%{box-shadow:0 0 8px rgba(34,211,238,0.3)}50%{box-shadow:0 0 20px rgba(34,211,238,0.6)}}
+
+/* Name entry */
+.name-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:20px;animation:fadeIn 0.5s ease both}
+.name-logo{font-size:48px;animation:bounceIn 0.8s ease both}
+.name-title{font-family:'Space Mono',monospace;font-size:32px;font-weight:700;background:linear-gradient(90deg,var(--cyan),var(--accent),var(--pink));background-size:200% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:shimmer 3s linear infinite}
+.name-sub{font-size:13px;color:var(--muted);animation:fadeIn 0.5s ease 0.3s both}
+.name-input{background:rgba(255,255,255,0.06);border:2px solid var(--border);border-radius:14px;padding:14px 20px;font-size:20px;color:var(--text);font-family:inherit;text-align:center;width:100%;max-width:300px;outline:none;transition:border-color 0.3s;animation:fadeInUp 0.5s ease 0.4s both}
+.name-input:focus{border-color:var(--accent)}
+.name-input::placeholder{color:#374151}
+.name-btn{padding:14px 48px;border-radius:14px;border:none;font-size:17px;font-weight:800;font-family:inherit;cursor:pointer;color:#fff;background:linear-gradient(135deg,var(--accent),var(--pink));transition:transform 0.2s cubic-bezier(.34,1.56,.64,1);animation:fadeInUp 0.5s ease 0.5s both;letter-spacing:1px}
+.name-btn:hover{transform:scale(1.06)}.name-btn:active{transform:scale(0.97)}
+.name-btn:disabled{opacity:0.4;cursor:not-allowed;transform:none}
+
 .menu{padding-top:24px;padding-bottom:40px;display:flex;flex-direction:column;gap:22px}
 .logo-emojis{font-size:42px;letter-spacing:14px;text-align:center;animation:bounceIn 0.8s ease both}
 .logo-title{font-family:'Space Mono',monospace;font-size:42px;font-weight:700;text-align:center;letter-spacing:5px;background:linear-gradient(90deg,var(--cyan),var(--accent),var(--pink));background-size:200% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:shimmer 3s linear infinite,fadeInUp 0.6s ease 0.2s both}
 .logo-sub{text-align:center;font-size:11px;color:var(--muted);letter-spacing:3px;text-transform:uppercase;margin-top:4px;animation:fadeIn 0.6s ease 0.4s both}
-.sec-title{font-size:10px;font-weight:700;letter-spacing:3px;color:var(--muted);text-transform:uppercase;text-align:center;margin-bottom:6px;animation:fadeIn 0.4s ease both}
+.welcome-msg{text-align:center;font-size:13px;color:var(--cyan);font-weight:600;animation:fadeIn 0.4s ease 0.3s both}
+.sec-title{font-size:10px;font-weight:700;letter-spacing:3px;color:var(--muted);text-transform:uppercase;text-align:center;margin-bottom:6px}
 .menu-cards{display:flex;gap:10px}
 .menu-card{flex:1;border:none;border-radius:16px;padding:20px 10px;cursor:pointer;text-align:center;font-family:inherit;transition:transform 0.25s cubic-bezier(.34,1.56,.64,1),box-shadow 0.25s;animation:fadeInUp 0.5s ease both}
 .menu-card:hover{transform:translateY(-5px) scale(1.03)}.menu-card:active{transform:translateY(-1px) scale(0.97)}
@@ -175,6 +156,19 @@ body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif}
 .htp-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px}.htp-item{display:flex;align-items:center;gap:7px}.htp-emoji{font-size:20px;flex-shrink:0;width:28px;text-align:center}
 .htp-text{font-size:10px;color:#cbd5e1;line-height:1.35}.htp-text b{color:var(--text);font-weight:700}
 .htp-note{font-size:10px;color:var(--muted);line-height:1.4;padding:8px 10px;background:rgba(255,255,255,0.03);border-radius:8px;border-left:3px solid var(--accent)}
+
+/* Leaderboard */
+.lb{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;animation:fadeInUp 0.5s ease 0.8s both}
+.lb-header{padding:14px 16px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none}.lb-header:hover{background:rgba(255,255,255,0.02)}
+.lb-title{font-size:14px;font-weight:800;color:var(--orange);letter-spacing:1px}
+.lb-body{padding:0 12px 14px;animation:fadeIn 0.3s ease both}
+.lb-row{display:flex;align-items:center;padding:7px 10px;border-radius:8px;margin-bottom:2px;background:rgba(255,255,255,0.02);transition:background 0.2s}
+.lb-row.me{background:rgba(34,211,238,0.08);border:1px solid rgba(34,211,238,0.2);animation:glowPulse 2s ease infinite}
+.lb-rank{font-size:13px;width:32px;text-align:center;flex-shrink:0;font-weight:700;color:var(--muted)}
+.lb-name{flex:1;font-size:12px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lb-name.me-name{color:var(--cyan)}
+.lb-wins{font-size:11px;color:var(--green);font-weight:700;min-width:40px;text-align:right}
+
 .lobby{display:flex;flex-direction:column;align-items:center;gap:18px;padding:40px 16px;animation:fadeInUp 0.5s ease both}
 .lobby-title{font-family:'Space Mono',monospace;font-size:28px;font-weight:700;color:var(--accent);letter-spacing:2px}
 .lobby-code-box{background:var(--surface);border:2px dashed var(--accent);border-radius:16px;padding:24px 40px;text-align:center}
@@ -188,7 +182,6 @@ body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif}
 .lobby-waiting{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:14px}
 .lobby-spinner{width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite}
 .lobby-err{color:var(--red);font-size:12px;font-weight:600}
-.lobby-name-row{display:flex;gap:8px;width:100%;max-width:320px}
 .game{display:flex;flex-direction:column;gap:12px;position:relative}
 .game-header{display:flex;align-items:center;justify-content:space-between;gap:6px;animation:fadeIn 0.3s ease both}
 .back-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:11px;font-family:inherit;transition:background 0.2s}.back-btn:hover{background:rgba(255,255,255,0.08)}
@@ -218,7 +211,6 @@ body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif}
 .move-btn:hover::after{opacity:1}.move-btn:hover{transform:translateY(-4px) scale(1.06);box-shadow:0 8px 24px rgba(0,0,0,0.3)}.move-btn:active{transform:translateY(-1px) scale(0.97)}
 .move-btn.limited{background:linear-gradient(135deg,rgba(167,139,250,0.08),rgba(244,114,182,0.08));border:1px solid rgba(167,139,250,0.2)}
 .move-btn.used{opacity:0.25;cursor:not-allowed;background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.04)}.move-btn.used:hover{transform:none;box-shadow:none}.move-btn.used::after{display:none}
-.move-btn.selected{border-color:var(--cyan);box-shadow:0 0 16px rgba(34,211,238,0.3);background:rgba(34,211,238,0.08)}
 .move-emoji{font-size:22px;margin-bottom:2px}.move-label{font-size:8px;font-weight:600;color:#94a3b8}
 .picked-banner{text-align:center;padding:16px;background:rgba(34,211,238,0.06);border:1px solid rgba(34,211,238,0.2);border-radius:12px;animation:scaleIn 0.3s ease both}
 .picked-emoji{font-size:40px;margin-bottom:4px}.picked-text{font-size:12px;color:var(--cyan);font-weight:700;letter-spacing:1px}.picked-waiting{font-size:10px;color:var(--muted);margin-top:4px}
@@ -252,25 +244,16 @@ body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif}
 .play-again-btn:hover{transform:translateY(-3px) scale(1.03)}.play-again-btn:active{transform:scale(0.97)}
 .float-emoji{position:fixed;font-size:32px;pointer-events:none;z-index:250;animation:floatUp 1.2s ease forwards}
 .disconnected{text-align:center;padding:20px;color:var(--red);font-weight:700;font-size:14px;animation:fadeIn 0.3s ease both}
-.lb-box{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;animation:fadeInUp 0.5s ease 0.8s both}
-.lb-header{padding:14px 16px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none}.lb-header:hover{background:rgba(255,255,255,0.02)}
-.lb-title{font-size:14px;font-weight:800;color:var(--orange);letter-spacing:1px}
-.lb-body{padding:0 16px 16px;animation:fadeIn 0.3s ease both}
-.lb-row{display:flex;align-items:center;padding:8px 10px;border-radius:8px;margin-bottom:3px;background:rgba(255,255,255,0.02)}
-.lb-rank{font-size:14px;width:28px;text-align:center;flex-shrink:0}
-.lb-name{flex:1;font-size:13px;font-weight:700;color:var(--text)}
-.lb-stats{font-size:11px;color:var(--muted);font-weight:600;text-align:right}
-.lb-wins{color:var(--cyan)}.lb-losses{color:var(--orange);margin-left:8px}
-.lb-empty{font-size:11px;color:var(--muted);text-align:center;padding:12px}
-.lb-clear{font-size:10px;color:var(--muted);cursor:pointer;text-align:center;margin-top:8px;opacity:0.5;transition:opacity 0.2s}.lb-clear:hover{opacity:1;color:var(--red)}
 `;
 
 export default function RPSDeluxe() {
-  const [screen, setScreen] = useState("menu");
+  const [screen, setScreen] = useState("name"); // name, menu, lobby, game, result
   const [mode, setMode] = useState(null);
+  const [username, setUsername] = useState("");
+  const [nameInput, setNameInput] = useState("");
   const [showHTP, setShowHTP] = useState(false);
   const [showLB, setShowLB] = useState(false);
-  const [leaderboard, setLeaderboard] = useState({});
+  const [myWins, setMyWins] = useState(0);
   const [myScore, setMyScore] = useState(0);
   const [oppScore, setOppScore] = useState(0);
   const [round, setRound] = useState(0);
@@ -289,7 +272,6 @@ export default function RPSDeluxe() {
   const [lobbyMode, setLobbyMode] = useState(null);
   const [roomCode, setRoomCode] = useState("");
   const [inputCode, setInputCode] = useState("");
-  const [playerName, setPlayerName] = useState("");
   const [myPlayer, setMyPlayer] = useState(null);
   const [opponentName, setOpponentName] = useState("");
   const [waiting, setWaiting] = useState(false);
@@ -303,20 +285,19 @@ export default function RPSDeluxe() {
   const timerRef = useRef(null);
   const wsRef = useRef(null);
   const timerIntervalRef = useRef(null);
-  const playerNameRef = useRef("");
 
   const WINN = WINS_NEEDED;
   const isLocal = mode === "local";
   const isOnline = mode === "online";
-  const leftLabel = isLocal ? "Player 1" : isOnline ? (playerNameRef.current || "You") : "You";
-  const rightLabel = isLocal ? "Player 2" : isOnline ? (opponentName || "Opponent") : "AI";
+  const leftLabel = isLocal ? "Player 1" : isOnline ? "Player 1" : username || "You";
+  const rightLabel = isLocal ? "Player 2" : isOnline ? "Player 2" : "AI";
 
-  useEffect(() => {
-    loadLeaderboard().then(setLeaderboard);
-    return () => { if (wsRef.current) wsRef.current.close(); if (timerRef.current) clearTimeout(timerRef.current); if (timerIntervalRef.current) clearInterval(timerIntervalRef.current); };
-  }, []);
+  // Build leaderboard
+  const fullLB = [...FAKE_PLAYERS, { name: username || "You", wins: myWins, isMe: true }].sort((a, b) => b.wins - a.wins);
+  const myRank = fullLB.findIndex((p) => p.isMe) + 1;
+  const rankEmojis = ["🥇", "🥈", "🥉"];
 
-  function refreshLB() { loadLeaderboard().then(setLeaderboard); }
+  useEffect(() => { return () => { if (wsRef.current) wsRef.current.close(); if (timerRef.current) clearTimeout(timerRef.current); if (timerIntervalRef.current) clearInterval(timerIntervalRef.current); }; }, []);
 
   function spawnFloats(emoji, count = 5) {
     const nf = [];
@@ -350,7 +331,7 @@ export default function RPSDeluxe() {
     if (isNukeVsNuke) { mt = "nuke_draw"; nM = multiplier + 1; spawnFloats("☢️", 8); }
     else if (result === "a") { pts = multiplier * (polNuke ? 2 : 1); nMy += pts; mt = "win"; nM = 1; spawnFloats(MOVES[moveA].emoji, 4); }
     else if (result === "b") { pts = multiplier * (polNuke ? 2 : 1); nOpp += pts; mt = "lose"; nM = 1; spawnFloats(MOVES[moveB].emoji, 4); }
-    const rd = { round: round + 1, myMove: moveA, oppMove: moveB, result, isNukeVsNuke, message: pickMsg(mt), points: pts, multiplier, polNuke };
+    const rd = { round: round + 1, myMove: moveA, oppMove: moveB, result, isNukeVsNuke, message: pickMsg(mt), points: pts, polNuke };
     setMyUsed(nMyU); setOppUsed(nOppU); setMyScore(nMy); setOppScore(nOpp); setMultiplier(nM);
     setRound((r) => r + 1); setRoundResult(rd); setHistory((h) => [...h, rd]); setShowResult(true);
     if (result === "a") { setScorePop("left"); setTimeout(() => setScorePop(null), 400); }
@@ -358,16 +339,11 @@ export default function RPSDeluxe() {
     setTimeout(() => {
       setAnimating(false);
       if (nMy >= WINN || nOpp >= WINN) {
-        // Record to leaderboard for AI games
-        if (!isLocal && !isOnline) {
-          const name = "You";
-          if (nMy >= WINN) recordWin(name).then(refreshLB);
-          else recordLoss(name).then(refreshLB);
-        }
+        if (nMy >= WINN && !isLocal) setMyWins((w) => w + 1);
         setTimeout(() => setScreen("result"), 1000);
       }
     }, 300);
-  }, [myScore, oppScore, myUsed, oppUsed, round, multiplier, isLocal, isOnline]);
+  }, [myScore, oppScore, myUsed, oppUsed, round, multiplier, isLocal]);
 
   function playMoveAI(move) {
     if (animating) return;
@@ -397,7 +373,6 @@ export default function RPSDeluxe() {
     if (isLocal && myScore < WINN && oppScore < WINN) setTurnScreen(true);
   }
 
-  /* ═══ ONLINE ═══ */
   function connectWS(onOpen) {
     if (wsRef.current) wsRef.current.close();
     setDisconnected(false);
@@ -438,7 +413,7 @@ export default function RPSDeluxe() {
           else if (iWon) { mt = "win"; spawnFloats(MOVES[myMoveThis].emoji, 4); }
           else if (iLost) { mt = "lose"; spawnFloats(MOVES[oppMoveThis].emoji, 4); }
           const polNuke = isPoliticianBeatsNuke(msg.p1Move, msg.p2Move);
-          const rd = { round: msg.round, myMove: myMoveThis, oppMove: oppMoveThis, result: localResult, isNukeVsNuke, message: pickMsg(mt), points: msg.points, multiplier: msg.multiplier, polNuke };
+          const rd = { round: msg.round, myMove: myMoveThis, oppMove: oppMoveThis, result: localResult, isNukeVsNuke, message: pickMsg(mt), points: msg.points, polNuke };
           if (myP === "p1") { setMyScore(msg.p1Score); setOppScore(msg.p2Score); }
           else { setMyScore(msg.p2Score); setOppScore(msg.p1Score); }
           setMyUsed(msg.yourUsed); setOppUsed(msg.opponentUsed);
@@ -448,8 +423,7 @@ export default function RPSDeluxe() {
           if (iWon) { setScorePop("left"); setTimeout(() => setScorePop(null), 400); }
           if (iLost) { setScorePop("right"); setTimeout(() => setScorePop(null), 400); }
           if (msg.gameOver) {
-            const myName = playerNameRef.current;
-            if (myName) { if (iWon) recordWin(myName).then(refreshLB); else recordLoss(myName).then(refreshLB); }
+            if (iWon) setMyWins((w) => w + 1);
             setTimeout(() => setScreen("result"), 3500);
           }
           break;
@@ -466,84 +440,76 @@ export default function RPSDeluxe() {
     ws.onclose = () => { if (screen === "game" || screen === "result") setDisconnected(true); };
   }
 
-  function createRoom() {
-    const name = playerNameRef.current || "Player 1";
-    setLobbyError("");
-    setLobbyMode("create");
-    connectWS((ws) => { ws.send(JSON.stringify({ type: "create_room", name })); });
-  }
-  function joinRoom() {
-    if (!inputCode.trim()) { setLobbyError("Enter a room code"); return; }
-    const name = playerNameRef.current || "Player 2";
-    setLobbyError("");
-    connectWS((ws) => { ws.send(JSON.stringify({ type: "join_room", code: inputCode.trim(), name })); });
-  }
+  function createRoom() { setLobbyError(""); setLobbyMode("create"); connectWS((ws) => { ws.send(JSON.stringify({ type: "create_room", name: username })); }); }
+  function joinRoom() { if (!inputCode.trim()) { setLobbyError("Enter a room code"); return; } setLobbyError(""); connectWS((ws) => { ws.send(JSON.stringify({ type: "join_room", code: inputCode.trim(), name: username })); }); }
   function sendMove(move) { if (!wsRef.current || myMove) return; wsRef.current.send(JSON.stringify({ type: "pick_move", move })); }
   function requestRematch() { if (wsRef.current) wsRef.current.send(JSON.stringify({ type: "rematch" })); }
-  function goToMenu() { if (wsRef.current) wsRef.current.close(); setScreen("menu"); setMode(null); setLobbyMode(null); setRoomCode(""); setInputCode(""); setWaiting(false); setLobbyError(""); setMyMove(null); setOppReady(false); setDisconnected(false); if (timerIntervalRef.current) clearInterval(timerIntervalRef.current); refreshLB(); }
+  function goToMenu() { if (wsRef.current) wsRef.current.close(); setScreen("menu"); setMode(null); setLobbyMode(null); setRoomCode(""); setInputCode(""); setWaiting(false); setLobbyError(""); setMyMove(null); setOppReady(false); setDisconnected(false); if (timerIntervalRef.current) clearInterval(timerIntervalRef.current); }
 
   const gameOver = myScore >= WINN || oppScore >= WINN;
   const activeUsed = isLocal ? (currentPlayer === 1 ? myUsed : oppUsed) : myUsed;
   const styleTag = <style dangerouslySetInnerHTML={{ __html: CSS }} />;
 
-  // Leaderboard sorted
-  const lbSorted = Object.values(leaderboard).sort((a, b) => b.wins - a.wins || a.losses - b.losses);
-  const rankEmojis = ["🥇", "🥈", "🥉"];
+  // ── NAME ENTRY ──
+  if (screen === "name") {
+    return (<>{styleTag}<div className="app"><div className="inner name-screen">
+      <div className="name-logo">🪨 📄 ✂️</div>
+      <div className="name-title">RPS DELUXE</div>
+      <div className="name-sub">Enter your username to get started</div>
+      <input className="name-input" placeholder="Username..." value={nameInput} onChange={(e) => setNameInput(e.target.value)} maxLength={16} onKeyDown={(e) => { if (e.key === "Enter" && nameInput.trim()) { setUsername(nameInput.trim()); setScreen("menu"); } }} />
+      <button className="name-btn" disabled={!nameInput.trim()} onClick={() => { setUsername(nameInput.trim()); setScreen("menu"); }}>Let's Go</button>
+    </div></div></>);
+  }
 
-  const htpSection = (
-    <div className="htp">
-      <div className="htp-header" onClick={() => setShowHTP(!showHTP)}><span className="htp-title">📖 How to Play</span><span className={`htp-arrow ${showHTP ? "open" : ""}`}>▼</span></div>
-      {showHTP && (
-        <div className="htp-body">
-          <div className="htp-section"><div className="htp-sub">🎯 Goal</div><div className="htp-text">First to <b>5 wins</b>. Pick your move each round and outsmart your opponent!</div></div>
-          <div className="htp-section"><div className="htp-sub">🪨 The Basics</div>
-            <div className="htp-grid">
-              <div className="htp-item"><span className="htp-emoji">🪨</span><span className="htp-text"><b>Rock</b> beats Scissors + Kid</span></div>
-              <div className="htp-item"><span className="htp-emoji">📄</span><span className="htp-text"><b>Paper</b> beats Rock + Hammer</span></div>
-              <div className="htp-item"><span className="htp-emoji">✂️</span><span className="htp-text"><b>Scissors</b> beats Paper + Net</span></div>
-              <div className="htp-item"><span className="htp-emoji">🤵</span><span className="htp-text"><b>Politician</b> — only beats Nuke (2 pts!), loses to all else</span></div>
-            </div></div>
-          <div className="htp-section"><div className="htp-sub">⚡ Special Moves (one use each!)</div>
-            <div className="htp-grid">
-              <div className="htp-item"><span className="htp-emoji">👶</span><span className="htp-text"><b>Kid</b> beats all <b>except Rock</b></span></div>
-              <div className="htp-item"><span className="htp-emoji">🥅</span><span className="htp-text"><b>Net</b> beats all <b>except Scissors</b></span></div>
-              <div className="htp-item"><span className="htp-emoji">🔨</span><span className="htp-text"><b>Hammer</b> beats all <b>except Paper</b></span></div>
-              <div className="htp-item"><span className="htp-emoji">☢️</span><span className="htp-text"><b>Nuke</b> beats all <b>except Hammer</b></span></div>
-            </div></div>
-          <div className="htp-section"><div className="htp-sub">🔺 Special Triangle</div><div className="htp-text"><b>Hammer</b> → Net → <b>Kid</b> → Hammer (each beats the next)</div></div>
-          <div className="htp-section"><div className="htp-sub">☢️ Nuke vs Nuke</div><div className="htp-note">Both pick Nuke? <b>No points</b>, next round is <b>double</b>! Stacks if it happens again.</div></div>
-          <div className="htp-section"><div className="htp-sub">🤵 Politician vs Nuke</div><div className="htp-note">Politician beating Nuke = <b>2 points</b> (stacks with multiplier)!</div></div>
-          <div className="htp-section"><div className="htp-sub">🎮 Modes</div><div className="htp-text"><b>Easy AI</b> — random<br/><b>Hard AI</b> — strategic<br/><b>Local</b> — pass & play<br/><b>Online</b> — room code, 15s timer</div></div>
-        </div>
-      )}
-    </div>
-  );
-
-  const lbSection = (
-    <div className="lb-box">
-      <div className="lb-header" onClick={() => setShowLB(!showLB)}><span className="lb-title">🏆 Leaderboard</span><span className={`htp-arrow ${showLB ? "open" : ""}`}>▼</span></div>
-      {showLB && (
-        <div className="lb-body">
-          {lbSorted.length === 0 ? <div className="lb-empty">No games played yet. Win some matches to appear here!</div> :
-            lbSorted.slice(0, 10).map((p, i) => (
-              <div key={i} className="lb-row">
-                <div className="lb-rank">{rankEmojis[i] || `#${i + 1}`}</div>
-                <div className="lb-name">{p.name}</div>
-                <div className="lb-stats"><span className="lb-wins">{p.wins}W</span><span className="lb-losses">{p.losses}L</span></div>
-              </div>
-            ))
-          }
-          {lbSorted.length > 0 && <div className="lb-clear" onClick={async () => { await saveLeaderboard({}); setLeaderboard({}); }}>Clear leaderboard</div>}
-        </div>
-      )}
-    </div>
-  );
-
+  // ── MENU ──
   if (screen === "menu") {
     return (<>{styleTag}<div className="app"><div className="inner menu">
       <div><div className="logo-emojis">🪨 📄 ✂️</div><h1 className="logo-title">RPS DELUXE</h1><div className="logo-sub">Best of 9 • Special Moves • Pure Chaos</div></div>
-      {htpSection}
-      {lbSection}
+      <div className="welcome-msg">Welcome, {username}! 👋</div>
+
+      {/* How to play */}
+      <div className="htp">
+        <div className="htp-header" onClick={() => setShowHTP(!showHTP)}><span className="htp-title">📖 How to Play</span><span className={`htp-arrow ${showHTP ? "open" : ""}`}>▼</span></div>
+        {showHTP && (
+          <div className="htp-body">
+            <div className="htp-section"><div className="htp-sub">🎯 Goal</div><div className="htp-text">First to <b>5 points</b> wins the match!</div></div>
+            <div className="htp-section"><div className="htp-sub">🪨 The Basics (unlimited use)</div>
+              <div className="htp-grid">
+                <div className="htp-item"><span className="htp-emoji">🪨</span><span className="htp-text"><b>Rock</b> beats Scissors</span></div>
+                <div className="htp-item"><span className="htp-emoji">📄</span><span className="htp-text"><b>Paper</b> beats Rock</span></div>
+                <div className="htp-item"><span className="htp-emoji">✂️</span><span className="htp-text"><b>Scissors</b> beats Paper</span></div>
+                <div className="htp-item"><span className="htp-emoji">🤵</span><span className="htp-text"><b>Politician</b> — beats only Nuke (2 pts!)</span></div>
+              </div></div>
+            <div className="htp-section"><div className="htp-sub">⚡ Special Cards (one use each!)</div>
+              <div className="htp-grid">
+                <div className="htp-item"><span className="htp-emoji">👶</span><span className="htp-text"><b>Kid</b> beats Paper, Scissors, Hammer</span></div>
+                <div className="htp-item"><span className="htp-emoji">🥅</span><span className="htp-text"><b>Net</b> beats Paper, Rock, Kid</span></div>
+                <div className="htp-item"><span className="htp-emoji">🔨</span><span className="htp-text"><b>Hammer</b> beats Rock, Scissors, Net</span></div>
+                <div className="htp-item"><span className="htp-emoji">☢️</span><span className="htp-text"><b>Nuke</b> beats everything except Politician</span></div>
+              </div></div>
+            <div className="htp-section"><div className="htp-sub">🔺 Special Triangle</div><div className="htp-text"><b>Kid</b> → Hammer → <b>Net</b> → Kid</div></div>
+            <div className="htp-section"><div className="htp-sub">💥 Special Rules</div>
+              <div className="htp-note">☢️ <b>Nuke vs Nuke</b> = 0 points, next round worth double!<br/>🤵 <b>Politician vs Nuke</b> = Politician wins for 2 points!</div></div>
+          </div>
+        )}
+      </div>
+
+      {/* Leaderboard */}
+      <div className="lb">
+        <div className="lb-header" onClick={() => setShowLB(!showLB)}><span className="lb-title">🏆 Leaderboard</span><span className={`htp-arrow ${showLB ? "open" : ""}`}>▼</span></div>
+        {showLB && (
+          <div className="lb-body">
+            {fullLB.map((p, i) => (
+              <div key={i} className={`lb-row ${p.isMe ? "me" : ""}`}>
+                <div className="lb-rank">{rankEmojis[i] || `#${i + 1}`}</div>
+                <div className={`lb-name ${p.isMe ? "me-name" : ""}`}>{p.isMe ? username : p.name}</div>
+                <div className="lb-wins">{p.wins}W</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div><div className="sec-title">VS Computer</div>
         <div className="menu-cards">
           <button className="menu-card c-easy" onClick={() => startOfflineGame("easy")}><div className="c-emoji">🌱</div><div className="c-ttl">Easy</div><div className="c-desc">Random picks</div></button>
@@ -557,14 +523,14 @@ export default function RPSDeluxe() {
     </div></div></>);
   }
 
+  // ── LOBBY ──
   if (screen === "lobby") {
     return (<>{styleTag}<div className="app"><div className="inner lobby">
       <div className="lobby-title">Online Play</div>
       {!lobbyMode && (<>
-        <input className="lobby-input" placeholder="Your name (optional)" defaultValue={playerName} onChange={(e) => { setPlayerName(e.target.value); playerNameRef.current = e.target.value; }} maxLength={16} />
         <button className="lobby-btn primary" onClick={createRoom}>Create Room</button>
         <div className="lobby-or">— OR —</div>
-        <div className="lobby-name-row"><input className="lobby-input" placeholder="Room code" value={inputCode} onChange={(e) => setInputCode(e.target.value.toUpperCase())} maxLength={4} style={{letterSpacing:6,fontFamily:"'Space Mono',monospace",fontSize:20}} /></div>
+        <input className="lobby-input" placeholder="Room code" value={inputCode} onChange={(e) => setInputCode(e.target.value.toUpperCase())} maxLength={4} style={{letterSpacing:6,fontFamily:"'Space Mono',monospace",fontSize:20}} />
         <button className="lobby-btn green" onClick={joinRoom}>Join Room</button>
       </>)}
       {lobbyMode === "create" && waiting && (<><div className="lobby-code-box"><div className="lobby-code">{roomCode}</div><div className="lobby-code-label">Share this code with your friend</div></div><div className="lobby-waiting"><div className="lobby-spinner" />Waiting for opponent...</div></>)}
@@ -573,6 +539,7 @@ export default function RPSDeluxe() {
     </div></div></>);
   }
 
+  // ── RESULT ──
   if (screen === "result") {
     const iWon = myScore >= WINN;
     const winLabel = isLocal ? (myScore >= WINN ? "Player 1 Wins!" : "Player 2 Wins!") : (iWon ? "VICTORY!" : "DEFEAT");
@@ -580,6 +547,7 @@ export default function RPSDeluxe() {
       <div className="final-badge" style={{ background: iWon || isLocal ? "linear-gradient(135deg,#059669,#22d3ee)" : "linear-gradient(135deg,#dc2626,#f97316)" }}>
         <div className="final-icon">{iWon || isLocal ? "🏆" : "💀"}</div><div className="final-title">{winLabel}</div><div className="final-score">{myScore} – {oppScore}</div>
       </div>
+      {!isLocal && <div style={{textAlign:"center",fontSize:12,color:"var(--muted)",animation:"fadeIn 0.5s ease 0.2s both"}}>Your rank: <b style={{color:"var(--cyan)"}}>#{myRank}</b> on the leaderboard ({myWins} wins)</div>}
       <div className="history-box"><div className="history-title">Match History</div>
         {history.map((h, i) => (
           <div key={i} className="history-row" style={{ borderLeft: h.result === "a" ? "3px solid var(--cyan)" : h.result === "b" ? "3px solid var(--orange)" : h.isNukeVsNuke ? "3px solid var(--red)" : "3px solid #475569" }}>
@@ -598,6 +566,7 @@ export default function RPSDeluxe() {
     </div></div></>);
   }
 
+  // ── GAME ──
   const renderMoveGrid = (onPick) => (
     <div className="move-section">
       <div className="pick-label">{isLocal ? `Player ${currentPlayer} — Pick your move` : "Pick your move"}</div>
@@ -625,6 +594,23 @@ export default function RPSDeluxe() {
   const timerPct = isOnline ? Math.max(0, (timer / 15) * 100) : 0;
   const timerColor = timer > 7 ? "var(--cyan)" : timer > 3 ? "var(--orange)" : "var(--red)";
 
+  // Round result banner text
+  function getBannerText() {
+    if (!roundResult) return "";
+    if (roundResult.isNukeVsNuke) return "☢️ MUTUAL DESTRUCTION ☢️";
+    if (isLocal) return roundResult.result === "a" ? "PLAYER 1 WON!" : roundResult.result === "b" ? "PLAYER 2 WON!" : "DRAW!";
+    if (isOnline) return roundResult.result === "a" ? "PLAYER 1 WON!" : roundResult.result === "b" ? "PLAYER 2 WON!" : "DRAW!";
+    return roundResult.result === "a" ? "YOU WON!" : roundResult.result === "b" ? "YOU LOST!" : "DRAW!";
+  }
+
+  function getBannerColor() {
+    if (!roundResult) return "";
+    if (roundResult.isNukeVsNuke) return "linear-gradient(90deg,#dc2626,#f97316,#dc2626)";
+    if (roundResult.result === "a") return "linear-gradient(90deg,#059669,#22d3ee)";
+    if (roundResult.result === "b") return "linear-gradient(90deg,#dc2626,#f97316)";
+    return "linear-gradient(90deg,#475569,#64748b)";
+  }
+
   return (<>{styleTag}<div className="app"><div className="inner game">
     <div className="game-header">
       <button className="back-btn" onClick={goToMenu}>← Menu</button>
@@ -639,7 +625,7 @@ export default function RPSDeluxe() {
     {multiplier > 1 && <div className="double-stakes">☢️ NEXT ROUND WORTH {multiplier}x POINTS! ☢️</div>}
     {isOnline && !showResult && !myMove && (<div><div className="timer-bar-wrap"><div className="timer-bar" style={{ width: `${timerPct}%`, background: timerColor }} /></div><div className={`timer-label ${timer <= 5 ? "urgent" : ""}`}>{Math.ceil(timer)}s</div></div>)}
     {!isLocal && !isOnline && renderArsenal("🤖 AI's Arsenal", oppUsed)}
-    {isOnline && renderArsenal(`🎯 ${rightLabel}'s Arsenal`, oppUsed)}
+    {isOnline && renderArsenal(`🎯 Opponent's Arsenal`, oppUsed)}
     {isLocal && currentPlayer === 1 && !turnScreen && renderArsenal("🎮 P2's Arsenal", oppUsed)}
     {isLocal && currentPlayer === 2 && !turnScreen && renderArsenal("🎮 P1's Arsenal", myUsed)}
     {disconnected && <div className="disconnected">⚠️ Opponent disconnected<br/><button className="lobby-btn back" onClick={goToMenu} style={{marginTop:8}}>Back to Menu</button></div>}
@@ -653,11 +639,7 @@ export default function RPSDeluxe() {
             <div className="result-vs">⚔️</div>
             <div className="result-move-box"><div className="result-move-emoji right">{MOVES[roundResult.oppMove]?.emoji}</div><div className="result-move-name">{rightLabel}</div></div>
           </div>
-          <div className="result-banner" style={{
-            background: roundResult.isNukeVsNuke ? "linear-gradient(90deg,#dc2626,#f97316,#dc2626)" : roundResult.result === "a" ? "linear-gradient(90deg,#059669,#22d3ee)" : roundResult.result === "b" ? "linear-gradient(90deg,#dc2626,#f97316)" : "linear-gradient(90deg,#475569,#64748b)",
-          }}>
-            {roundResult.isNukeVsNuke ? "☢️ MUTUAL DESTRUCTION ☢️" : roundResult.result === "a" ? `${leftLabel.toUpperCase()} WINS!` : roundResult.result === "b" ? `${rightLabel.toUpperCase()} WINS!` : "DRAW!"}
-          </div>
+          <div className="result-banner" style={{ background: getBannerColor() }}>{getBannerText()}</div>
           <div className="result-msg">{roundResult.message}</div>
           {roundResult.points > 1 && <div className="result-points">+{roundResult.points} pts{roundResult.polNuke ? " — Politician vs Nuke!" : ""}</div>}
           {roundResult.isNukeVsNuke && <div className="result-points">Next round worth {multiplier}x!</div>}
