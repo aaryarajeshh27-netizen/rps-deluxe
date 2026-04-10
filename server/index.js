@@ -56,10 +56,11 @@ function resolveRound(room) {
   const result = resolve(mA, mB);
   if (MOVES_META[mA].limited) room.p1Used.push(mA);
   if (MOVES_META[mB].limited) room.p2Used.push(mB);
+  const polNuke = (mA === "politician" && mB === "nuke") || (mB === "politician" && mA === "nuke");
   let pts = 0;
   if (isNukeVsNuke) { room.multiplier += 1; }
-  else if (result === "a") { pts = room.multiplier; room.p1Score += pts; room.multiplier = 1; }
-  else if (result === "b") { pts = room.multiplier; room.p2Score += pts; room.multiplier = 1; }
+  else if (result === "a") { pts = room.multiplier * (polNuke ? 2 : 1); room.p1Score += pts; room.multiplier = 1; }
+  else if (result === "b") { pts = room.multiplier * (polNuke ? 2 : 1); room.p2Score += pts; room.multiplier = 1; }
   room.round += 1;
   const roundData = { round: room.round, p1Move: mA, p2Move: mB, result, isNukeVsNuke, points: pts, multiplier: room.multiplier };
   room.history.push(roundData);
