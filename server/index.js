@@ -7,13 +7,13 @@ const MOVES_META = {
   nuke: { limited: true }, politician: { limited: false },
 };
 const WINS = {
-  rock: ["scissors", "kindergartner", "politician"],
-  paper: ["rock", "hammer", "politician"],
-  scissors: ["paper", "net", "politician"],
-  kindergartner: ["paper", "scissors", "hammer", "nuke", "politician"],
-  net: ["rock", "paper", "kindergartner", "nuke", "politician"],
-  hammer: ["rock", "scissors", "net", "nuke", "politician"],
-  nuke: ["rock", "paper", "scissors", "kindergartner", "net"],
+  rock: ["scissors"],
+  paper: ["rock"],
+  scissors: ["paper"],
+  kindergartner: ["paper", "scissors", "hammer"],
+  net: ["paper", "rock", "kindergartner"],
+  hammer: ["rock", "scissors", "net"],
+  nuke: ["rock", "paper", "scissors", "kindergartner", "net", "hammer"],
   politician: ["nuke"],
 };
 function resolve(a, b) {
