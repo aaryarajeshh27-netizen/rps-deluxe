@@ -80,7 +80,7 @@ function pickMsg(t) { const a = MSGS[t] || MSGS.draw; return a[Math.floor(Math.r
 
 const WS_URL = typeof window !== "undefined" && window.location.hostname === "localhost"
   ? "ws://localhost:3001"
-  : "wss://rps-deluxe-production-2e2e.up.railway.app";
+  : "wss://rps-deluxe.onrender.com";
 
 const FAKE_PLAYERS = [
   { name: "fatcop123 👑", wins: 43 },
